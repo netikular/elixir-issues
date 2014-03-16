@@ -8,8 +8,42 @@ defmodule Issues.CLI do
   """
 
   def run(argv) do
-    parse_args(argv)
+    argv
+      |> parse_args
+      |> process
   end
+
+  def process(:help) do
+    IO.puts """
+    usage: issues <user> <project> [ count | #{@default_count} ]
+    """
+    System.halt(0)
+  end
+
+  def process({user, project, _count}) do
+    Issues.GithubIssues.fetch(user, project)
+      |> decode_response
+      |> convert_to_list_of_hashdicts
+      |> sort_into_ascending_order
+      |> Enum.take(count)
+  end
+
+  def decode_response({:ok, body}), do: Jsonex.decode(body)
+  def decode_response({:error, msg}) do
+    error = Jsonex.decode(msg)["message"]
+    IO.puts "Error, fetching from Github: #{error}"
+    System.halt(2)
+  end
+
+  def convert_to_list_of_hashdicts(list) do
+    list |> Enum.map(&HashDict.new/1)
+  end
+
+  def sort_into_ascending_order(list_of_issues) do
+    Enum.sort list_of_issues,
+              fn i1, i2 -> i1["created_at"] <= i2["created_at"] end
+  end
+
 
   @doc """
   `argv can be -h or --help which returns :help,
@@ -27,11 +61,11 @@ defmodule Issues.CLI do
       { [ help: true ], _ , _ }
         -> :help
 
-      { _, [ user, project , count ], _ }
-        -> { user, project, count ]
+      { _, [ user, project, count ], _ }
+        -> { user, project, binary_to_integer(count) }
 
       { _, [ user, project ], _ }
-        -> { user, project, @default_count ]
+        -> { user, project, @default_count }
 
       _ -> :help
       end
